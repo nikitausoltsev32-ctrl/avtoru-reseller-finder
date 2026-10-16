@@ -1,0 +1,155 @@
+---
+name: avtoru-outreach
+description: Пишет в личку (чат Авто.ру) продавцам из Excel-списков, которые собрал скилл avtoru-reseller-finder, заданному числу человек за раз, после подтверждения текста и списка пользователем, с суточным лимитом и отметками статуса в таблице. Используй, когда просят написать собранным перекупам, прогнать список рассылкой, связаться с N продавцами из базы Авто.ру.
+---
+
+# Рассылка по списку Авто.ру (в чат площадки)
+
+Берёт продавцов со статусом «не писали» из файлов папки `AutoRu_Resellers` на рабочем столе (их создаёт скилл `avtoru-reseller-finder`), показывает пользователю текст и точный список, и только после его «да» пишет каждому в чат на странице объявления. После отправки ставит в таблице статус «написали» и дату.
+
+## Правила (обязательны)
+
+1. **Только с подтверждением в чате.** Перед отправкой покажите точный текст сообщения и точный список получателей (ник, модель, ссылка на объявление) и дождитесь явного «да, отправляй». Подтверждение действует только на этот список и этот текст, в этой сессии. Для следующей порции подтверждение нужно снова.
+2. **Без человека не отправляем.** В автозапуске, по расписанию и в любой сессии, где некому ответить, скилл только готовит список (шаги 1–3) и пишет, что ждёт подтверждения. Не отправлять «на основании сохранённого разрешения».
+3. **Лимиты.** По умолчанию 10 сообщений в сутки, жёсткий потолок 20 (его держит `outreach.py`). Между сообщениями пауза не меньше 60 секунд. Одному человеку пишем не больше одного раза: любой статус кроме «не писали» означает «не трогать».
+4. **Текст пользователя, без хитростей.** Отправляется один и тот же текст, который одобрил пользователь, без подмены слов и случайных вариаций ради обхода спам-фильтров. Не выдавать себя за покупателя или кого-то ещё, если это не так. Если пользователь просит текст с обманом, откажитесь и предложите честный вариант.
+5. **Вход делает человек.** Скилл не входит в аккаунт и не вводит пароли и коды. Если на странице видна кнопка «Войти» или чат просит авторизацию, остановитесь и попросите пользователя войти на auto.ru в Chrome самому.
+6. **Стоп-сигналы.** Капча, предупреждение площадки, сообщение «слишком много сообщений», блокировка, неожиданное окно: остановить всю порцию, ничего не обходить, неотправленным статус не ставить, сообщить пользователю. Если кто-то ответил «не пишите» или пожаловался, поставьте «отказ» и больше не пишите.
+7. **Телефоны не нажимать и не собирать.**
+8. **Статус «написали» ставится только после проверки**, что сообщение появилось в диалоге. Если не уверены, не отмечайте и скажите об этом.
+
+## Что нужно на входе
+
+- Папка `AutoRu_Resellers` с файлами `NNN_resellers_ГГГГ-ММ-ДД.xlsx` (Приложение A сохраните как `outreach.py`; если рядом лежит `setup_folder.py` из скилла-сборщика, папку найдёт он, иначе спросите путь).
+- Сколько человек писать сейчас (по умолчанию 5, максимум по лимиту).
+- Текст сообщения (хранится в `message.txt` в папке; если файла нет, попросите пользователя написать текст).
+- Пользователь вошёл на auto.ru в Chrome; расширение Claude in Chrome с разрешением для auto.ru.
+
+## Процесс
+
+### Шаг 1. Текст
+`python3 outreach.py message "<папка>"` покажет сохранённый текст. Если пусто или пользователь хочет другой, спросите текст, сохраните: `python3 outreach.py message "<папка>" --set "текст"`.
+
+### Шаг 2. Кому писать
+`python3 outreach.py pick "<папка>" --limit N` (опции `--daily-cap 10`, `--only-strong` чтобы брать только тех, у кого 3+ машин). Скрипт выдаёт JSON: сколько уже отправлено сегодня, сколько ещё можно, и список кандидатов. Сначала идут записи с уверенностью «средняя», затем «низкая-средняя», внутри уровня старые файлы раньше. Если `can_send_more` равно 0, скажите, что суточный лимит исчерпан, и остановитесь.
+
+### Шаг 3. Подтверждение (стоп-точка)
+Покажите пользователю таблицу: ник, модель, уверенность, ссылка на объявление, и под ней дословный текст сообщения. Спросите: «Отправить эти N сообщений? (да/нет, можно убрать строки)». Без явного «да» дальше не идти. Напомните одной фразой, что массовая рассылка может нарушать правила площадки и привести к блокировке аккаунта, отвечает за это пользователь.
+
+### Шаг 4. Проверка входа и первая отправка
+1. Chrome-инструменты: загрузите `tabs_context_mcp`, `navigate`, `javascript_tool`, `computer`, `read_page` одним ToolSearch; `tabs_context_mcp` с `createIfEmpty: true`, новая вкладка.
+2. Откройте объявление первого получателя. Если среди кнопок есть «Войти» или нет признаков аккаунта, остановитесь (правило 5).
+3. **Первая отправка за всё время или после долгой паузы идёт под присмотром:** сделайте скриншоты перед отправкой и после, покажите пользователю, что чат устроен как ожидалось, и только потом продолжайте остальных. Селекторы чата ниже проверены только на уровне кнопки; поле ввода и кнопку отправки надёжнее искать по скриншоту/`read_page`.
+
+### Шаг 5. Цикл по получателям
+Для каждого из подтверждённого списка по одному:
+1. `navigate` на ссылку объявления. Если объявление снято, 404 или «продано»: `python3 outreach.py skip "<папка>" --pid <ID> --comment "объявление снято"` и дальше.
+2. Нажмите кнопку «Написать» на странице объявления (в вёрстке это элемент с классом `OpenChatByOfferButton`; ищите по тексту «Написать продавцу»/«Написать»).
+3. В открывшемся окне чата клик в поле ввода, `type` с одобренным текстом, отправка (кнопка отправки или Enter).
+4. Скриншот: сообщение должно быть видно в диалоге. Если да: `python3 outreach.py mark "<папка>" --pid <ID> --status написали`. Если нет, не отмечайте, остановите порцию, сообщите.
+5. Пауза не меньше 60 секунд (несколько `computer wait` по 10 секунд) перед следующим. Не ускоряйте.
+6. Закройте вкладку по окончании.
+
+### Шаг 6. Итог пользователю
+Сколько отправлено, кому пропущено и почему (снято, стоп-сигнал), сколько осталось от суточного лимита, где лежат файлы. Если порция остановилась из-за предупреждения площадки, скажите прямо, что больше сегодня не писать.
+
+## Приложение A. outreach.py
+```python
+#!/usr/bin/env python3
+"""Помощник рассылки: выбирает, кому писать, и ведёт отметки в Excel-файлах папки AutoRu_Resellers.
+Сам ничего не отправляет: отправка идёт в браузере, только после подтверждения пользователя в чате.
+
+Команды:
+  python3 outreach.py pick  <папка> --limit N [--daily-cap 10] [--only-strong]
+      Печатает JSON: сколько уже отправлено сегодня, сколько можно ещё, и список кандидатов
+      (статус «не писали», без «снято», сначала «средняя» уверенность, затем старые файлы).
+  python3 outreach.py mark  <папка> --pid ID --status написали [--comment "..."]
+      Ставит статус и дату контакта в нужном файле. Допустимые статусы: написали, ответил, отказ,
+      не отвечает, не перекуп.
+  python3 outreach.py skip  <папка> --pid ID --comment "объявление снято"
+      Оставляет «не писали», но помечает строку, чтобы не выбирать её снова.
+  python3 outreach.py message <папка> [--set "текст"]
+      Показывает (или сохраняет) текст сообщения из message.txt.
+"""
+import sys, json, re, datetime
+from pathlib import Path
+from openpyxl import load_workbook
+
+STATUSES = {'написали', 'ответил', 'отказ', 'не отвечает', 'не перекуп'}
+HARD_CAP = 20          # больше этого в сутки скрипт не выдаёт никогда
+COL = dict(n=1, date=2, model=3, nick=4, pid=5, prof=6, listing=7, conf=11, status=13, cdate=14, comment=15)
+FILE_RE = re.compile(r'^(\d{3})_resellers_\d{4}-\d{2}-\d{2}\.xlsx$')
+
+def files(folder):
+    return sorted(p for p in Path(folder).expanduser().glob('*.xlsx')
+                  if not p.name.startswith('~$') and (FILE_RE.match(p.name) or p.name == 'resellers.xlsx'))
+
+def arg(name, default=None):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
+
+def rows(folder):
+    for f in files(folder):
+        try:
+            ws = load_workbook(f)['Продавцы']
+        except Exception:
+            continue
+        for r in range(2, ws.max_row + 1):
+            pid = ws.cell(r, COL['pid']).value
+            if pid:
+                yield f, r, ws, {k: ws.cell(r, c).value for k, c in COL.items()}
+
+def cmd_pick(folder):
+    today = datetime.date.today().isoformat()
+    limit = int(arg('--limit', '5'))
+    cap = min(int(arg('--daily-cap', '10')), HARD_CAP)
+    sent_today, cands = 0, []
+    for f, r, ws, d in rows(folder):
+        if str(d['cdate'] or '')[:10] == today and d['status'] in ('написали', 'ответил', 'отказ', 'не отвечает'):
+            sent_today += 1
+        status = (d['status'] or 'не писали').strip()
+        if status != 'не писали' or 'снято' in str(d['comment'] or '').lower():
+            continue
+        strong = str(d['conf'] or '').startswith('средняя')
+        if '--only-strong' in sys.argv and not strong:
+            continue
+        cands.append((0 if strong else 1, f.name, r, dict(
+            pid=str(d['pid']).strip(), nick=d['nick'], model=d['model'], confidence=d['conf'],
+            listing=d['listing'], profile=d['prof'], file=f.name)))
+    left = max(0, cap - sent_today)
+    take = [c[3] for c in sorted(cands, key=lambda c: (c[0], c[1], c[2]))[:min(limit, left)]]
+    print(json.dumps(dict(sent_today=sent_today, daily_cap=cap, can_send_more=left,
+                          candidates_total=len(cands), picked=take), ensure_ascii=False))
+
+def update(folder, pid, status=None, comment=None):
+    for f, r, ws, d in rows(folder):
+        if str(d['pid']).strip() == pid:
+            wb = load_workbook(f); w = wb['Продавцы']
+            if status:
+                w.cell(r, COL['status']).value = status
+                w.cell(r, COL['cdate']).value = datetime.date.today().isoformat()
+            if comment:
+                old = w.cell(r, COL['comment']).value
+                w.cell(r, COL['comment']).value = (str(old) + '; ' if old else '') + comment
+            wb.save(f)
+            print(json.dumps(dict(ok=True, file=f.name, row=r, pid=pid, status=status), ensure_ascii=False)); return
+    print(json.dumps(dict(ok=False, error='pid_not_found', pid=pid), ensure_ascii=False)); sys.exit(1)
+
+def cmd_message(folder):
+    p = Path(folder).expanduser() / 'message.txt'
+    text = arg('--set')
+    if text is not None:
+        p.write_text(text, encoding='utf-8')
+    print(json.dumps(dict(path=str(p), text=p.read_text(encoding='utf-8') if p.exists() else None), ensure_ascii=False))
+
+if __name__ == '__main__':
+    sys.stdout.reconfigure(encoding='utf-8')
+    cmd, folder = sys.argv[1], sys.argv[2]
+    if cmd == 'pick': cmd_pick(folder)
+    elif cmd == 'mark':
+        st = arg('--status')
+        if st not in STATUSES: sys.exit('status must be one of: ' + ', '.join(sorted(STATUSES)))
+        update(folder, arg('--pid'), st, arg('--comment'))
+    elif cmd == 'skip': update(folder, arg('--pid'), None, arg('--comment', 'объявление снято'))
+    elif cmd == 'message': cmd_message(folder)
+    else: sys.exit('unknown command')
+```

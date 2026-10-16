@@ -31,6 +31,15 @@ def main():
         assert r3['added'] == 1 and r3['duplicates_skipped'] == 2 and '002_resellers_' in r3['file']
         ids = run(ROOT / 'scripts/known_ids.py', folder)
         assert sorted(ids) == ['AAA111', 'BBB222', 'CCC333'], ids
+        # рассылка: отбор, лимиты и отметки (сама отправка в тест не входит)
+        o = run(ROOT / 'scripts/outreach.py', 'pick', folder, '--limit', '5', '--daily-cap', '2')
+        assert o['can_send_more'] == 2 and [x['pid'] for x in o['picked']] == ['AAA111', 'BBB222'], o  # сильные первыми, потолок 2
+        run(ROOT / 'scripts/outreach.py', 'mark', folder, '--pid', 'AAA111', '--status', 'написали')
+        run(ROOT / 'scripts/outreach.py', 'skip', folder, '--pid', 'BBB222', '--comment', 'объявление снято')
+        o = run(ROOT / 'scripts/outreach.py', 'pick', folder, '--limit', '5', '--daily-cap', '10')
+        assert o['sent_today'] == 1 and [x['pid'] for x in o['picked']] == ['CCC333'], o
+        m = run(ROOT / 'scripts/outreach.py', 'message', folder, '--set', 'Здравствуйте!')
+        assert m['text'] == 'Здравствуйте!'
         st = run(ROOT / 'scripts/setup_folder.py', '--dir', folder, '--save-criteria', '{"region":"moskva","models":[["kia","rio"]]}')
         assert st['next_number'] == 3 and st['criteria']['region'] == 'moskva'
     print('OK: все проверки пройдены')
