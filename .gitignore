@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+rows.txt
+*.xlsx
+criteria.json
+.DS_Store
